@@ -17,7 +17,7 @@ async function loadConfig() {
     COOKIE_NAME: Deno.env.get("PROXY_COOKIE_NAME") || envVars.PROXY_COOKIE_NAME || "proxy_auth",
     PORT: parseInt(Deno.env.get("PROXY_PORT") || envVars.PROXY_PORT || "8000"),
     APIPATH: Deno.env.get("PROXY_APIPATH") || envVars.PROXY_APIPATH || "/apipath",
-    COOKIE_MAX_AGE: 86400, // 1天
+    COOKIE_MAX_AGE: Deno.env.get("COOKIE_EXPIRE_TIME") || envVars.COOKIE_EXPIRE_TIME || "604800" //7天
   };
 
   console.log("Proxy server configuration:");
