@@ -1,23 +1,16 @@
 // proxy_server.ts
 import { serve } from "https://deno.land/std@0.152.0/http/server.ts";
 import { getCookies, setCookie } from "https://deno.land/std@0.152.0/http/cookie.ts";
-import { load } from "https://deno.land/std@0.152.0/dotenv/mod.ts";
 
 // 加载环境配置
 async function loadConfig() {
-  let envVars: Record<string, string> = {};
-  try {
-    envVars = await load();
-  } catch {
-    console.log("No .env file found, using environment variables only");
-  }
 
   const config = {
-    PASSWORD: Deno.env.get("PROXY_PASSWORD") || envVars.PROXY_PASSWORD || "your_secure_password",
-    COOKIE_NAME: Deno.env.get("PROXY_COOKIE_NAME") || envVars.PROXY_COOKIE_NAME || "proxy_auth",
-    PORT: parseInt(Deno.env.get("PROXY_PORT") || envVars.PROXY_PORT || "8000"),
-    APIPATH: Deno.env.get("PROXY_APIPATH") || envVars.PROXY_APIPATH || "/apipath",
-    COOKIE_MAX_AGE: Deno.env.get("COOKIE_EXPIRE_TIME") || envVars.COOKIE_EXPIRE_TIME || "604800" //7天
+    PASSWORD: Deno.env.get("PROXY_PASSWORD") || "your_secure_password",
+    COOKIE_NAME: Deno.env.get("PROXY_COOKIE_NAME") || "proxy_auth",
+    PORT: parseInt(Deno.env.get("PROXY_PORT") || "8000"),
+    APIPATH: Deno.env.get("PROXY_APIPATH") || "/apipath",
+    COOKIE_MAX_AGE: parseInt(Deno.env.get("COOKIE_EXPIRE_TIME") || "604800")
   };
 
   console.log("Proxy server configuration:");
