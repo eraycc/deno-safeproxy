@@ -1,6 +1,6 @@
 // proxy_server.ts
 import { serve } from "https://deno.land/std@0.152.0/http/server.ts";
-import { cookie } from "https://deno.land/std@0.152.0/http/cookie.ts";
+import { getCookies, setCookie } from "https://deno.land/std@0.152.0/http/cookie.ts";
 import { load } from "https://deno.land/std@0.152.0/dotenv/mod.ts";
 
 // 加载环境配置
@@ -116,12 +116,12 @@ function verifyAuth(cookies: Record<string, string>): boolean {
 }
 
 function setAuthCookie(headers: Headers): void {
-  cookie.setCookie(headers, {
+  setCookie(headers, {
     name: CONFIG.COOKIE_NAME,
     value: CONFIG.PASSWORD,
     path: "/",
     httpOnly: true,
-    maxAge: CONFIG.COOKIE_MAX_AGE,
+    maxAge: parseInt(CONFIG.COOKIE_MAX_AGE),
   });
 }
 
@@ -223,7 +223,7 @@ async function handleProxyRequest(urlStr: string, req: Request): Promise<Respons
 // 主请求路由器
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const cookies = cookie.getCookies(req.headers);
+  const cookies = getCookies(req.headers);
 
   // 认证路由
   if (url.pathname === "/auth" && req.method === "POST") {
