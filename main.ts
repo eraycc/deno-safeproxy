@@ -3,197 +3,178 @@ import { serve } from "https://deno.land/std@0.152.0/http/server.ts";
 import { cookie } from "https://deno.land/std@0.152.0/http/cookie.ts";
 import { load } from "https://deno.land/std@0.152.0/dotenv/mod.ts";
 
-// 尝试加载.env文件
-let envVars: Record<string, string> = {};
-try {
-  envVars = await load();
-} catch (error) {
-  console.log("No .env file found, using environment variables only");
+// 加载环境配置
+async function loadConfig() {
+  let envVars: Record<string, string> = {};
+  try {
+    envVars = await load();
+  } catch {
+    console.log("No .env file found, using environment variables only");
+  }
+
+  const config = {
+    PASSWORD: Deno.env.get("PROXY_PASSWORD") || envVars.PROXY_PASSWORD || "your_secure_password",
+    COOKIE_NAME: Deno.env.get("PROXY_COOKIE_NAME") || envVars.PROXY_COOKIE_NAME || "proxy_auth",
+    PORT: parseInt(Deno.env.get("PROXY_PORT") || envVars.PROXY_PORT || "8000"),
+    APIPATH: Deno.env.get("PROXY_APIPATH") || envVars.PROXY_APIPATH || "/apipath",
+    COOKIE_MAX_AGE: 86400, // 1天
+  };
+
+  console.log("Proxy server configuration:");
+  console.log(`- Password: ${config.PASSWORD ? "******" : "Not set"}`);
+  console.log(`- Cookie name: ${config.COOKIE_NAME}`);
+  console.log(`- Port: ${config.PORT}`);
+  console.log(`- API path: ${config.APIPATH}`);
+
+  if (config.PASSWORD === "your_secure_password") {
+    console.warn("\nWARNING: Using default password! Please set PROXY_PASSWORD for security.\n");
+  }
+
+  return config;
 }
 
-// 配置项（从环境变量获取或使用默认值）
-const CONFIG = {
-  PASSWORD: Deno.env.get("PROXY_PASSWORD") || envVars.PROXY_PASSWORD || "your_secure_password",
-  COOKIE_NAME: Deno.env.get("PROXY_COOKIE_NAME") || envVars.PROXY_COOKIE_NAME || "proxy_auth",
-  PORT: parseInt(Deno.env.get("PROXY_PORT") || envVars.PROXY_PORT || "8000"),
-  APIPATH: Deno.env.get("PROXY_APIPATH") || envVars.PROXY_APIPATH || "/apipath",
+const CONFIG = await loadConfig();
+
+// HTML 模板
+const HTML_TEMPLATES = {
+  passwordPage: (message = "") => `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Proxy Authentication</title>
+      <style>
+        body { font-family: Arial, sans-serif; background-color: #f5f5f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); width: 300px; text-align: center; }
+        h1 { color: #333; margin-top: 0; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+        button:hover { background-color: #45a049; }
+        .message { color: #e74c3c; margin: 10px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Proxy Authentication</h1>
+        ${message ? `<div class="message">${message}</div>` : ""}
+        <form method="POST" action="/auth">
+          <input type="password" name="password" placeholder="Enter password" required>
+          <button type="submit">Submit</button>
+        </form>
+      </div>
+    </body>
+    </html>
+  `,
+
+  guidePage: `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Proxy Guide</title>
+      <style>
+        body { font-family: Arial, sans-serif; background-color: #f5f5f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); width: 500px; text-align: center; }
+        h1 { color: #333; margin-top: 0; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+        button:hover { background-color: #45a049; }
+        .example { margin-top: 20px; color: #666; font-size: 0.9em; text-align: left; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Proxy Service</h1>
+        <form id="proxyForm">
+          <input type="text" id="url" name="url" placeholder="Enter URL to proxy (e.g., https://example.com)" required>
+          <button type="submit">Visit</button>
+        </form>
+        <div class="example">
+          <p>Examples:</p>
+          <ul>
+            <li>https://example.com</li>
+            <li>http://httpbin.org/get</li>
+            <li>ws://echo.websocket.org</li>
+          </ul>
+        </div>
+      </div>
+      <script>
+        document.getElementById('proxyForm').addEventListener('submit', function(e) {
+          e.preventDefault();
+          const url = document.getElementById('url').value;
+          if (url) {
+            window.location.href = '/proxy/' + encodeURIComponent(url);
+          }
+        });
+      </script>
+    </body>
+    </html>
+  `
 };
 
-// 密码验证页面HTML
-const passwordPage = (message = "") => `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Proxy Authentication</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f5f5;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-    .container {
-      background: white;
-      padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-      width: 300px;
-      text-align: center;
-    }
-    h1 {
-      color: #333;
-      margin-top: 0;
-    }
-    input {
-      width: 100%;
-      padding: 10px;
-      margin: 10px 0;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-    }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      width: 100%;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    .message {
-      color: #e74c3c;
-      margin: 10px 0;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Proxy Authentication</h1>
-    ${message ? `<div class="message">${message}</div>` : ""}
-    <form method="POST" action="/auth">
-      <input type="password" name="password" placeholder="Enter password" required>
-      <button type="submit">Submit</button>
-    </form>
-  </div>
-</body>
-</html>
-`;
-
-// 引导页面HTML
-const guidePage = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Proxy Guide</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f5f5;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-    .container {
-      background: white;
-      padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-      width: 500px;
-      text-align: center;
-    }
-    h1 {
-      color: #333;
-      margin-top: 0;
-    }
-    input {
-      width: 100%;
-      padding: 10px;
-      margin: 10px 0;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-    }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      width: 100%;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    .example {
-      margin-top: 20px;
-      color: #666;
-      font-size: 0.9em;
-      text-align: left;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Proxy Service</h1>
-    <form id="proxyForm">
-      <input type="text" id="url" name="url" placeholder="Enter URL to proxy (e.g., https://example.com)" required>
-      <button type="submit">Visit</button>
-    </form>
-    <div class="example">
-      <p>Examples:</p>
-      <ul>
-        <li>https://example.com</li>
-        <li>http://httpbin.org/get</li>
-        <li>ws://echo.websocket.org</li>
-      </ul>
-    </div>
-  </div>
-  <script>
-    document.getElementById('proxyForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const url = document.getElementById('url').value;
-      if (url) {
-        window.location.href = '/proxy/' + encodeURIComponent(url);
-      }
-    });
-  </script>
-</body>
-</html>
-`;
-
-// 验证密码
-function verifyPassword(cookies: Record<string, string>): boolean {
+// 认证相关函数
+function verifyAuth(cookies: Record<string, string>): boolean {
   return cookies[CONFIG.COOKIE_NAME] === CONFIG.PASSWORD;
 }
 
-// 处理代理请求
+function setAuthCookie(headers: Headers): void {
+  cookie.setCookie(headers, {
+    name: CONFIG.COOKIE_NAME,
+    value: CONFIG.PASSWORD,
+    path: "/",
+    httpOnly: true,
+    maxAge: CONFIG.COOKIE_MAX_AGE,
+  });
+}
+
+// 提取并解码URL路径
+function extractAndDecodeUrl(pathname: string, prefix: string): string | null {
+  const rawUrl = pathname.slice(prefix.length);
+  if (!rawUrl) return null;
+  
+  try {
+    // 尝试直接解码（处理编码过的URL）
+    const decodedUrl = decodeURIComponent(rawUrl);
+    // 验证解码后的URL是否有效
+    new URL(decodedUrl);
+    return decodedUrl;
+  } catch (decodeError) {
+    try {
+      // 如果解码失败，尝试直接使用原始URL（处理未编码的URL）
+      new URL(rawUrl);
+      return rawUrl;
+    } catch (rawError) {
+      console.error("URL解析失败:", { decodeError, rawError });
+      return null;
+    }
+  }
+}
+
+// 代理请求处理器
 async function handleProxyRequest(urlStr: string, req: Request): Promise<Response> {
   try {
-    // 过滤掉密码cookie和其他敏感headers
+    const targetUrl = new URL(urlStr);
     const headers = new Headers(req.headers);
-    headers.delete("cookie");
+
+    // 过滤掉密码cookie
+    if (headers.has("cookie")) {
+      const cookies = headers.get("cookie")!
+        .split(';')
+        .map(c => c.trim())
+        .filter(c => !c.startsWith(`${CONFIG.COOKIE_NAME}=`));
+      
+      cookies.length > 0 
+        ? headers.set("cookie", cookies.join('; ')) 
+        : headers.delete("cookie");
+    }
+
+    // 必须删除host头
     headers.delete("host");
 
-    // 处理WebSocket升级请求
+    // WebSocket 代理
     if (headers.get("upgrade")?.toLowerCase() === "websocket") {
       const { response, socket } = Deno.upgradeWebSocket(req);
-      const targetUrl = new URL(urlStr);
       const targetSocket = new WebSocket(
         targetUrl.toString(),
-        Array.from(headers.entries()).reduce((acc, [key, value]) => {
-          acc[key] = value;
-          return acc;
-        }, {} as Record<string, string>)
+        Array.from(headers.entries()).reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {})
       );
 
       socket.onopen = () => targetSocket.onopen = () => {};
@@ -201,129 +182,123 @@ async function handleProxyRequest(urlStr: string, req: Request): Promise<Respons
       targetSocket.onmessage = (e) => socket.send(e.data);
       socket.onclose = () => targetSocket.close();
       targetSocket.onclose = () => socket.close();
-      socket.onerror = (e) => console.error("Client WebSocket error:", e);
-      targetSocket.onerror = (e) => console.error("Target WebSocket error:", e);
+      socket.onerror = (e) => console.error("Client WS error:", e);
+      targetSocket.onerror = (e) => console.error("Target WS error:", e);
 
       return response;
     }
 
-    // 普通HTTP/HTTPS请求
-    const proxyReq = new Request(urlStr, {
+    // HTTP/HTTPS 代理
+    const proxyRes = await fetch(targetUrl.toString(), {
       method: req.method,
       headers: headers,
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      body: req.body,
     });
 
-    const proxyRes = await fetch(proxyReq);
-
-    // 创建一个新的响应，复制所有headers
     const resHeaders = new Headers(proxyRes.headers);
     
     // 处理重定向
-    if (proxyRes.status >= 300 && proxyRes.status < 400) {
+    if ([301, 302, 303, 307, 308].includes(proxyRes.status)) {
       const location = proxyRes.headers.get("location");
       if (location) {
-        // 如果是相对路径，转换为绝对路径
         try {
           new URL(location);
         } catch {
-          const newLocation = new URL(location, urlStr).toString();
+          const newLocation = new URL(location, targetUrl).toString();
           resHeaders.set("location", `/proxy/${encodeURIComponent(newLocation)}`);
         }
       }
     }
 
-    // 返回代理响应
     return new Response(proxyRes.body, {
       status: proxyRes.status,
       headers: resHeaders,
     });
   } catch (error) {
     console.error("Proxy error:", error);
-    return new Response("Proxy error: " + error.message, { status: 500 });
+    return new Response(`Proxy error: ${error.message}`, { status: 500 });
   }
 }
 
-// 主请求处理器
+// 主请求路由器
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const cookies = cookie.getCookies(req.headers);
 
-  // 处理认证请求
+  // 认证路由
   if (url.pathname === "/auth" && req.method === "POST") {
     const formData = await req.formData();
     const password = formData.get("password");
     
     if (password === CONFIG.PASSWORD) {
       const headers = new Headers();
-      cookie.setCookie(headers, {
-        name: CONFIG.COOKIE_NAME,
-        value: CONFIG.PASSWORD,
-        path: "/",
-        httpOnly: true,
-        maxAge: 86400, // 1天
-      });
+      setAuthCookie(headers);
       headers.set("location", "/");
       return new Response(null, { status: 303, headers });
-    } else {
-      return new Response(passwordPage("Invalid password"), { status: 401 });
     }
+    return new Response(HTML_TEMPLATES.passwordPage("Invalid password"), { 
+      status: 401,
+      headers: { "content-type": "text/html" },
+    });
   }
 
-  // 处理API路径请求
+  // API代理路由
   if (url.pathname.startsWith(CONFIG.APIPATH)) {
-    const targetUrl = url.pathname.slice(CONFIG.APIPATH.length + 1);
-    if (!targetUrl) {
-      return new Response("Missing URL parameter", { status: 400 });
-    }
+    const targetUrl = extractAndDecodeUrl(url.pathname, CONFIG.APIPATH + "/");
+    if (!targetUrl) return badRequest("Missing or invalid URL parameter");
     
     try {
-      // 解码URL并验证格式
-      const decodedUrl = decodeURIComponent(targetUrl);
-      new URL(decodedUrl); // 验证URL格式
-      return await handleProxyRequest(decodedUrl, req);
+      return await handleProxyRequest(targetUrl, req);
     } catch (error) {
-      return new Response("Invalid URL: " + error.message, { status: 400 });
+      return badRequest(`Invalid URL: ${error.message}`);
     }
   }
 
-  // 处理代理请求
+  // 普通代理路由
   if (url.pathname.startsWith("/proxy/")) {
-    if (!verifyPassword(cookies)) {
-      const headers = new Headers();
-      headers.set("location", "/");
-      return new Response(null, { status: 303, headers });
+    if (!verifyAuth(cookies)) {
+      return redirectTo("/");
     }
     
-    const targetUrl = url.pathname.slice("/proxy/".length);
-    if (!targetUrl) {
-      return new Response("Missing URL parameter", { status: 400 });
-    }
+    const targetUrl = extractAndDecodeUrl(url.pathname, "/proxy/");
+    if (!targetUrl) return badRequest("Missing or invalid URL parameter");
     
     try {
-      // 解码URL并验证格式
-      const decodedUrl = decodeURIComponent(targetUrl);
-      new URL(decodedUrl); // 验证URL格式
-      return await handleProxyRequest(decodedUrl, req);
+      return await handleProxyRequest(targetUrl, req);
     } catch (error) {
-      return new Response("Invalid URL: " + error.message, { status: 400 });
+      return badRequest(`Invalid URL: ${error.message}`);
     }
   }
 
-  // 处理根路径请求
+  // 根路由
   if (url.pathname === "/") {
-    if (verifyPassword(cookies)) {
-      return new Response(guidePage, {
-        headers: { "content-type": "text/html" },
-      });
-    } else {
-      return new Response(passwordPage(), {
-        headers: { "content-type": "text/html" },
-      });
-    }
+    return verifyAuth(cookies)
+      ? htmlResponse(HTML_TEMPLATES.guidePage)
+      : htmlResponse(HTML_TEMPLATES.passwordPage());
   }
 
-  // 其他路径返回404
+  // 404处理
+  return notFound();
+}
+
+// 辅助函数
+function htmlResponse(html: string): Response {
+  return new Response(html, {
+    headers: { "content-type": "text/html" },
+  });
+}
+
+function redirectTo(location: string): Response {
+  const headers = new Headers();
+  headers.set("location", location);
+  return new Response(null, { status: 303, headers });
+}
+
+function badRequest(message: string): Response {
+  return new Response(message, { status: 400 });
+}
+
+function notFound(): Response {
   return new Response("Not Found", { status: 404 });
 }
 
