@@ -1,4 +1,4 @@
-// proxy_server.ts
+// main.ts
 import { serve } from "https://deno.land/std@0.152.0/http/server.ts";
 import { getCookies, setCookie } from "https://deno.land/std@0.152.0/http/cookie.ts";
 
@@ -270,8 +270,6 @@ async function handleRequest(req: Request): Promise<Response> {
       : htmlResponse(HTML_TEMPLATES.passwordPage());
   }
 
-  // 404处理
-  return notFound();
 }
 
 // 辅助函数
@@ -289,10 +287,6 @@ function redirectTo(location: string): Response {
 
 function badRequest(message: string): Response {
   return new Response(message, { status: 400 });
-}
-
-function notFound(): Response {
-  return new Response("Not Found", { status: 404 });
 }
 
 // 启动服务器
